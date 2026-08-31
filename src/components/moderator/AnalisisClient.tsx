@@ -1,25 +1,77 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import { ModeratorNav } from "@/components/moderator/ModeratorNav";
-import type { AnalisisSistemData } from "@/app/(moderator)/moderator/analisis/page";
+import type { AnalisisClass } from "@/app/(moderator)/moderator/analisis/page";
+import {
+  computeAnalisisMetrics,
+  type StudentAnalytics,
+} from "@/lib/moderator/analisis-metrics";
 import {
   ArrowUpCircle,
   Award,
   CheckCircle2,
   Clock,
   Database,
+  Filter,
   Lightbulb,
   ListChecks,
   Sliders,
   Target,
 } from "lucide-react";
 
+const NO_CLASS_KEY = "__tanpa_kelas__";
+
 interface AnalisisClientProps {
-  data: AnalisisSistemData;
+  students: StudentAnalytics[];
+  classes: AnalisisClass[];
 }
 
-export function AnalisisClient({ data }: AnalisisClientProps) {
+export function AnalisisClient({ students, classes }: AnalisisClientProps) {
+  const classOptions = useMemo(() => {
+    const names = new Set(classes.map((c) => c.name));
+    for (const s of students) {
+      if (s.className) names.add(s.className);
+    }
+    const options = Array.from(names).map((name) => ({
+      key: name,
+      label: name,
+    }));
+    if (students.some((s) => !s.className)) {
+      options.push({ key: NO_CLASS_KEY, label: "Tanpa Kelas" });
+    }
+    return options;
+  }, [classes, students]);
+
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(classOptions.map((o) => o.key)),
+  );
+
+  const toggleClass = (key: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const filteredStudents = useMemo(
+    () =>
+      students.filter((s) => selected.has(s.className ?? NO_CLASS_KEY)),
+    [students, selected],
+  );
+
+  const data = useMemo(
+    () => computeAnalisisMetrics(filteredStudents),
+    [filteredStudents],
+  );
+
+  const allSelected = selected.size === classOptions.length;
+
   return (
     <main className="container mx-auto max-w-5xl px-4 py-8 space-y-6">
       <ModeratorNav active="analisis" />
@@ -28,9 +80,65 @@ export function AnalisisClient({ data }: AnalisisClientProps) {
         <h1 className="text-2xl font-bold">Analisis Sistem</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Ringkasan performa pembelajaran dari {data.totalSiswaAktif} siswa
-          aktif.
+          aktif
+          {!allSelected &&
+            ` (dari ${filteredStudents.length} siswa terpilih di ${selected.size} kelas)`}
+          .
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              Filter Kelas
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setSelected(new Set(classOptions.map((o) => o.key)))
+                }
+              >
+                Pilih Semua
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelected(new Set())}
+              >
+                Kosongkan
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {classOptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada data kelas.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-x-6 gap-y-3">
+              {classOptions.map((option) => (
+                <label
+                  key={option.key}
+                  className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                >
+                  <Checkbox
+                    checked={selected.has(option.key)}
+                    onCheckedChange={(checked) =>
+                      toggleClass(option.key, checked)
+                    }
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard
@@ -61,7 +169,7 @@ export function AnalisisClient({ data }: AnalisisClientProps) {
           icon={Database}
           label="Pembaruan Q-value"
           value={data.totalPembaruanQValue}
-          sub="total update tabel Q"
+          sub="total update tabel Q dari siswa terpilih"
         />
         <MetricCard
           icon={Clock}
